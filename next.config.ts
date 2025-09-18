@@ -18,10 +18,15 @@ const nextConfig: NextConfig = {
     ],
   },
   async rewrites() {
+    // Disable rewrites on Vercel to use server-side proxy instead
+    if (process.env.VERCEL) {
+      return [];
+    }
+    
     return [
       {
         source: '/api/v1/:path*',
-        destination: '${BACKEND_ORIGIN}/api/v1/:path*',
+        destination: `${process.env.BACKEND_ORIGIN}/api/v1/:path*`,
       },
     ];
   },
