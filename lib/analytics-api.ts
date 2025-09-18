@@ -23,6 +23,7 @@ export interface DailyReviewActivity {
   masteryReviews: number
   newCards: number
   totalTimeMinutes: number
+  correctCount: number
 }
 
 export interface UserReviewStats {

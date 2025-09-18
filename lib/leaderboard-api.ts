@@ -16,6 +16,17 @@ export interface LeaderboardEntry {
 }
 
 
+export interface AccuracyLeaderboardEntry {
+  rank: number
+  userId: number
+  username: string
+  avatarUrl?: string
+  accuracy: number
+  totalReviews: number
+  correctReviews: number
+  badge?: string
+}
+
 export interface StreakLeaderboardEntry {
   rank: number
   userId: number
