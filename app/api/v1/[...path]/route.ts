@@ -1,23 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-export async function GET(request: NextRequest, { params }: { params: { path: string[] } }) {
-  return handleRequest(request, params, 'GET');
+type Params = Promise<{ path: string[] }>;
+
+export async function GET(request: NextRequest, { params }: { params: Params }) {
+  const resolvedParams = await params;
+  return handleRequest(request, resolvedParams, 'GET');
 }
 
-export async function POST(request: NextRequest, { params }: { params: { path: string[] } }) {
-  return handleRequest(request, params, 'POST');
+export async function POST(request: NextRequest, { params }: { params: Params }) {
+  const resolvedParams = await params;
+  return handleRequest(request, resolvedParams, 'POST');
 }
 
-export async function PUT(request: NextRequest, { params }: { params: { path: string[] } }) {
-  return handleRequest(request, params, 'PUT');
+export async function PUT(request: NextRequest, { params }: { params: Params }) {
+  const resolvedParams = await params;
+  return handleRequest(request, resolvedParams, 'PUT');
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { path: string[] } }) {
-  return handleRequest(request, params, 'DELETE');
+export async function DELETE(request: NextRequest, { params }: { params: Params }) {
+  const resolvedParams = await params;
+  return handleRequest(request, resolvedParams, 'DELETE');
 }
 
-export async function PATCH(request: NextRequest, { params }: { params: { path: string[] } }) {
-  return handleRequest(request, params, 'PATCH');
+export async function PATCH(request: NextRequest, { params }: { params: Params }) {
+  const resolvedParams = await params;
+  return handleRequest(request, resolvedParams, 'PATCH');
 }
 
 async function handleRequest(
