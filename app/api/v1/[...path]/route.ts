@@ -1,112 +1,93 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server'
 
-type Params = Promise<{ path: string[] }>;
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
-export async function GET(request: NextRequest, { params }: { params: Params }) {
-  const resolvedParams = await params;
-  return handleRequest(request, resolvedParams, 'GET');
+const BACKEND_ORIGIN = process.env.BACKEND_ORIGIN || 'http://localhost:8080'
+
+function buildTargetUrl(req: NextRequest, path?: string[]) {
+  const pathname = (path ?? []).join('/')
+  const qs = req.nextUrl.search || ''
+  return `${BACKEND_ORIGIN}/api/v1/${pathname}${qs}`
 }
 
-export async function POST(request: NextRequest, { params }: { params: Params }) {
-  const resolvedParams = await params;
-  return handleRequest(request, resolvedParams, 'POST');
+function forwardHeaders(req: NextRequest): Headers {
+  const headers = new Headers(req.headers)
+  // Sanitize hop-by-hop headers and set correct host for upstream
+  headers.delete('content-length')
+  headers.delete('connection')
+  headers.delete('accept-encoding')
+  // Avoid triggering backend CORS on server-to-server proxy requests.
+  // The browser already talks to our Next app on the same origin, so CORS is unnecessary upstream.
+  headers.delete('origin')
+  headers.delete('referer')
+  try { headers.set('host', new URL(BACKEND_ORIGIN).host) } catch { }
+  return headers
 }
 
-export async function PUT(request: NextRequest, { params }: { params: Params }) {
-  const resolvedParams = await params;
-  return handleRequest(request, resolvedParams, 'PUT');
-}
+async function proxy(req: NextRequest, params: { path?: string[] }) {
+  const url = buildTargetUrl(req, params.path)
+  const method = req.method
+  const headers = forwardHeaders(req)
+  const body = method === 'GET' || method === 'HEAD' ? undefined : req.body
 
-export async function DELETE(request: NextRequest, { params }: { params: Params }) {
-  const resolvedParams = await params;
-  return handleRequest(request, resolvedParams, 'DELETE');
-}
+  const upstream = await fetch(url, {
+    method,
+    headers,
+    body,
+    redirect: 'manual',
+  })
 
-export async function PATCH(request: NextRequest, { params }: { params: Params }) {
-  const resolvedParams = await params;
-  return handleRequest(request, resolvedParams, 'PATCH');
-}
-
-async function handleRequest(
-  request: NextRequest,
-  params: { path: string[] },
-  method: string
-) {
-  const backendOrigin = process.env.BACKEND_ORIGIN;
-  
-  if (!backendOrigin) {
-    return NextResponse.json(
-      { error: 'Backend origin not configured' },
-      { status: 500 }
-    );
-  }
-
-  const path = params.path.join('/');
-  const url = new URL(`/api/v1/${path}`, backendOrigin);
-  
-  // Copy search params
-  request.nextUrl.searchParams.forEach((value, key) => {
-    url.searchParams.set(key, value);
-  });
-
-  const headers = new Headers();
-  
-  // Copy relevant headers
-  request.headers.forEach((value, key) => {
-    if (
-      key.toLowerCase() !== 'host' &&
-      key.toLowerCase() !== 'x-forwarded-for' &&
-      key.toLowerCase() !== 'x-forwarded-proto' &&
-      key.toLowerCase() !== 'x-vercel-id'
-    ) {
-      headers.set(key, value);
-    }
-  });
-
-  let body: BodyInit | undefined;
-  if (method !== 'GET' && method !== 'HEAD') {
-    try {
-      body = await request.arrayBuffer();
-    } catch (error) {
-      console.error('Error reading request body:', error);
+  // Build response, pass through headers and status
+  const respHeaders = new Headers()
+  // Preserve important headers
+  const copyHeaders = ['content-type', 'cache-control', 'location', 'vary']
+  for (const [k, v] of upstream.headers) {
+    const key = k.toLowerCase()
+    if (key === 'set-cookie') continue
+    if (copyHeaders.includes(key)) {
+      respHeaders.set(key, v)
     }
   }
 
-  try {
-    const response = await fetch(url.toString(), {
-      method,
-      headers,
-      body,
-    });
+  const res = new NextResponse(upstream.body, {
+    status: upstream.status,
+    headers: respHeaders,
+  })
 
-    const responseHeaders = new Headers();
-    
-    // Copy response headers
-    response.headers.forEach((value, key) => {
-      responseHeaders.set(key, value);
-    });
-
-    // Handle response body
-    const contentType = response.headers.get('content-type') || '';
-    let responseBody: BodyInit;
-
-    if (contentType.includes('application/json')) {
-      const data = await response.json();
-      responseBody = JSON.stringify(data);
-    } else {
-      responseBody = await response.arrayBuffer();
-    }
-
-    return new NextResponse(responseBody, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: responseHeaders,
-    });
-  } catch (error) {
-    console.error('Proxy error:', error);
-    return NextResponse.json(
-      { error: 'Proxy request failed' },
-      { status: 502 }
-    );
+  // Forward multiple Set-Cookie headers if present (undici extension)
+  const anyHeaders = upstream.headers as any
+  const setCookies: string[] | undefined = anyHeaders.getSetCookie?.() || anyHeaders.raw?.()['set-cookie']
+  if (Array.isArray(setCookies)) {
+    for (const c of setCookies) res.headers.append('set-cookie', c)
+  } else {
+    const single = upstream.headers.get('set-cookie')
+    if (single) res.headers.append('set-cookie', single)
   }
+
+  return res
+}
+
+export async function GET(req: NextRequest, ctx: { params: Promise<{ path?: string[] }> }) {
+  return proxy(req, await ctx.params)
+}
+
+export async function POST(req: NextRequest, ctx: { params: Promise<{ path?: string[] }> }) {
+  return proxy(req, await ctx.params)
+}
+
+export async function PUT(req: NextRequest, ctx: { params: Promise<{ path?: string[] }> }) {
+  return proxy(req, await ctx.params)
+}
+
+export async function PATCH(req: NextRequest, ctx: { params: Promise<{ path?: string[] }> }) {
+  return proxy(req, await ctx.params)
+}
+
+export async function DELETE(req: NextRequest, ctx: { params: Promise<{ path?: string[] }> }) {
+  return proxy(req, await ctx.params)
+}
+
+export async function OPTIONS(req: NextRequest, ctx: { params: Promise<{ path?: string[] }> }) {
+  return proxy(req, await ctx.params)
 }
